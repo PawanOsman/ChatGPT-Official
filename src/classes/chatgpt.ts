@@ -9,6 +9,7 @@ class ChatGPT {
 
 	constructor(key: string, options?: options) {
 		this.key = key;
+		this.conversations = [];
 		this.options = {
 			historySize: options?.historySize || 50,
 			temperature: options?.temperature || 0.7,

@@ -1,4 +1,4 @@
-import ChatGPT from "../src/index.js";
+import ChatGPT from "../dist/index.js";
 import readline from "readline";
 
 const rl = readline.createInterface({
@@ -6,7 +6,7 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-let bot = new ChatGPT(process.env.OPENAI_API_KEY as string);
+let bot = new ChatGPT(process.env.OPENAI_API_KEY);
 
 async function main() {
   while (true) {
