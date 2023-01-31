@@ -62,9 +62,10 @@ Current date: ${this.getToday()}<|im_end|>`);
 	public async ask(prompt: any, conversationId: string = "default") {
 		let conversation = this.getConversation(conversationId);
 		prompt = prompt[prompt.length - 1].includes([",", "!", "?", "."]) ? prompt : `${prompt}.`; // Thanks to https://github.com/optionsx
-		conversation.messages.push(`${prompt}<|im_end|>`);
+		conversation.messages.push(`${prompt}\n\n`);
 		conversation.messages = conversation.messages.slice(-this.options.historySize);
-		if(!conversation.messages[0].includes("Current date:")) conversation.messages[0] = `${this.options.instructions}
+		if (!conversation.messages[0].includes("Current date:"))
+			conversation.messages[0] = `${this.options.instructions}
 Current date: ${this.getToday()}<|im_end|>`;
 		conversation.lastActive = Date.now();
 		let promptStr = conversation.messages.join("\n");
