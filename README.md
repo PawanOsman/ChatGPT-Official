@@ -21,12 +21,10 @@ npm install chatgpt-official
 ```javascript
 import ChatGPT from "chatgpt-official";
 
-(async () => {
-  let bot = new ChatGPT("<OPENAI_API_KEY>");
+let bot = new ChatGPT("<OPENAI_API_KEY>");
 
-  let response = await bot.ask("Hello?");
-  console.log(response);
-})();
+let response = await bot.ask("Hello?");
+console.log(response);
 ```
 
 ## Note: This is unofficial means may be stop working anytime
