@@ -17,6 +17,10 @@ class ChatGPT {
 			top_p: options?.top_p || 1,
 			frequency_penalty: options?.frequency_penalty || 0,
 			presence_penalty: options?.presence_penalty || 0,
+			instructions:
+				options?.instructions ||
+				`You are ChatGPT, a large language model trained by OpenAI. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
+Knowledge cutoff: 2021-09`,
 		};
 	}
 
@@ -25,9 +29,8 @@ class ChatGPT {
 			id: conversationId,
 			messages: [],
 		};
-		conversation.messages.push(`You are ChatGPT, a large language model trained by OpenAI. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
-Knowledge cutoff: 2021-09
-Current date: ${this.getToday()}\n\n`);
+		conversation.messages.push(`${this.options.instructions}
+Current date: ${this.getToday()}<|im_end|>`);
 		this.conversations.push(conversation);
 
 		return conversation;
@@ -48,9 +51,8 @@ Current date: ${this.getToday()}\n\n`);
 		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
 		if (conversation) {
 			conversation.messages = [];
-			conversation.messages.push(`You are ChatGPT, a large language model trained by OpenAI. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
-Knowledge cutoff: 2021-09
-Current date: ${this.getToday()}\n\n`);
+			conversation.messages.push(`${this.options.instructions}
+Current date: ${this.getToday()}<|im_end|>`);
 			conversation.lastActive = Date.now();
 		}
 
@@ -60,8 +62,10 @@ Current date: ${this.getToday()}\n\n`);
 	public async ask(prompt: any, conversationId: string = "default") {
 		let conversation = this.getConversation(conversationId);
 		prompt = prompt[prompt.length - 1].includes([",", "!", "?", "."]) ? prompt : `${prompt}.`; // Thanks to https://github.com/optionsx
-		conversation.messages.push(`${prompt}\n\n`);
+		conversation.messages.push(`${prompt}<|im_end|>`);
 		conversation.messages = conversation.messages.slice(-this.options.historySize);
+		if(!conversation.messages[0].includes("Current date:")) conversation.messages[0] = `${this.options.instructions}
+Current date: ${this.getToday()}<|im_end|>`;
 		conversation.lastActive = Date.now();
 		let promptStr = conversation.messages.join("\n");
 		const response = await axios.post(
@@ -74,7 +78,7 @@ Current date: ${this.getToday()}\n\n`);
 				top_p: this.options.top_p,
 				frequency_penalty: this.options.frequency_penalty,
 				presence_penalty: this.options.presence_penalty,
-				stop: ["\n\n"],
+				stop: ["<|im_end|>"],
 			},
 			{
 				headers: {
@@ -84,11 +88,8 @@ Current date: ${this.getToday()}\n\n`);
 			},
 		);
 
-		let responseStr = response.data.choices[0].text
-			.replace(/<\|im_end\|>/g, "")
-			.replace(/\n\n/g, "")
-			.trim();
-		conversation.messages.push(`${responseStr}\n\n`);
+		let responseStr = response.data.choices[0].text.replace(/<\|im_end\|>/g, "").trim();
+		conversation.messages.push(`${responseStr}<|im_end|>`);
 		return responseStr;
 	}
 
