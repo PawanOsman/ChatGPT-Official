@@ -1,10 +1,12 @@
 import axios from "axios";
 import options from "../models/options.js";
+import conversation from "../models/conversation.js";
 
 class ChatGPT {
 	public key: string;
-	public messages: string[];
+	public conversations: conversation[];
 	public options: options;
+
 	constructor(key: string, options?: options) {
 		this.key = key;
 		this.options = {
@@ -15,18 +17,52 @@ class ChatGPT {
 			frequency_penalty: options?.frequency_penalty || 0,
 			presence_penalty: options?.presence_penalty || 0,
 		};
-		this.messages = [];
-		this.messages.push(`You are ChatGPT, a large language model trained by OpenAI. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
+	}
+
+	public addConversation(conversationId: string) {
+		let conversation = {
+			id: conversationId,
+			messages: [],
+		};
+		conversation.messages.push(`You are ChatGPT, a large language model trained by OpenAI. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
 Knowledge cutoff: 2021-09
 Current date: ${this.getToday()}\n\n`);
+		this.conversations.push(conversation);
+
+		return conversation;
 	}
-	public addMessage(message: string) {
-		this.messages.push(message);
+
+	public getConversation(conversationId: string) {
+		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
+		if (!conversation) {
+			conversation = this.addConversation(conversationId);
+		} else {
+			conversation.lastActive = Date.now();
+		}
+
+		return conversation;
 	}
-	public async ask(prompt: any) {
+
+	public resetConversation(conversationId: string) {
+		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
+		if (conversation) {
+			conversation.messages = [];
+			conversation.messages.push(`You are ChatGPT, a large language model trained by OpenAI. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
+Knowledge cutoff: 2021-09
+Current date: ${this.getToday()}\n\n`);
+			conversation.lastActive = Date.now();
+		}
+
+		return conversation;
+	}
+
+	public async ask(prompt: any, conversationId: string = "default") {
+		let conversation = this.getConversation(conversationId);
 		prompt = prompt[prompt.length - 1].includes([",", "!", "?", "."]) ? prompt : `${prompt}.`;
-		this.messages.push(`${prompt}\n\n`);
-		let promptStr = this.messages.join("\n");
+		conversation.messages.push(`${prompt}\n\n`);
+		conversation.messages = conversation.messages.slice(-this.options.historySize);
+		conversation.lastActive = Date.now();
+		let promptStr = conversation.messages.join("\n");
 		const response = await axios.post(
 			"https://api.openai.com/v1/completions",
 			{
@@ -51,7 +87,7 @@ Current date: ${this.getToday()}\n\n`);
 			.replace(/<\|im_end\|>/g, "")
 			.replace(/\n\n/g, "")
 			.trim();
-		this.messages.push(`${responseStr}\n\n`);
+		conversation.messages.push(`${responseStr}\n\n`);
 		return responseStr;
 	}
 
