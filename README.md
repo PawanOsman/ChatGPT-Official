@@ -57,8 +57,4 @@ let response2 = await bot.ask("Hello?", conversationId2);
 console.log(response2);
 ```
 
-## Note: This is unofficial means may be stop working anytime
-
-#
-
 ### Thanks to [waylaidwanderer](https://github.com/waylaidwanderer) for finding this method
