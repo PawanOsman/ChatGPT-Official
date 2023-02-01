@@ -26,6 +26,36 @@ let bot = new ChatGPT("<OPENAI_API_KEY>");
 let response = await bot.ask("Hello?");
 console.log(response);
 ```
+## Usage
+
+```javascript
+import ChatGPT from "chatgpt-official";
+
+let options = {
+  temperature: 0.7, // OpenAI parameter
+  max_tokens: 256, // OpenAI parameter [Max reposnse size by tokens]
+  top_p: 1, // OpenAI parameter
+  frequency_penalty: 0, // OpenAI parameter
+  presence_penalty: 0, // OpenAI parameter
+  historySize: 50, // Max messages to remember per conversation
+  instructions: `You are ChatGPT, a large language model trained by OpenAI.`, // initial instructions for the bot
+  model: "text-chat-davinci-002-20230126", // OpenAI parameter
+  stop: "<|im_end|>", // OpenAI parameter
+}
+
+let bot = new ChatGPT("<OPENAI_API_KEY>", options);  // Note: options is optional
+
+let response = await bot.ask("Hello?");
+console.log(response);
+
+let conversationId = "conversation name";
+let response1 = await bot.ask("Hello?", conversationId);
+console.log(response1);
+
+let conversationId2 = "another conversation name";
+let response2 = await bot.ask("Hello?", conversationId2);
+console.log(response2);
+```
 
 ## Note: This is unofficial means may be stop working anytime
 
