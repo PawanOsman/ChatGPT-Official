@@ -37,7 +37,6 @@ let options = {
   top_p: 1, // OpenAI parameter
   frequency_penalty: 0, // OpenAI parameter
   presence_penalty: 0, // OpenAI parameter
-  historySize: 50, // Max messages to remember per conversation
   instructions: `You are ChatGPT, a large language model trained by OpenAI.`, // initial instructions for the bot
   model: "text-chat-davinci-002-20230126", // OpenAI parameter
   stop: "<|im_end|>", // OpenAI parameter
