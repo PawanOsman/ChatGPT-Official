@@ -14,36 +14,46 @@ class ChatGPT {
 		this.conversations = [];
 		this.options = {
 			model: options?.model || "text-chat-davinci-002-20230126",
-			temperature: options?.temperature || 0.7,
-			max_tokens: options?.max_tokens || 256,
-			top_p: options?.top_p || 1,
+			temperature: options?.temperature || 0.1,
+			max_tokens: options?.max_tokens || 1024,
+			top_p: options?.top_p || 0.9,
 			frequency_penalty: options?.frequency_penalty || 0,
 			presence_penalty: options?.presence_penalty || 0,
 			instructions:
 				options?.instructions ||
-				`You are ChatGPT, a large language model trained by OpenAI. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
-Knowledge cutoff: 2021-09`,
+				`You are an AI language model developed by OpenAI, called ChatGPT. you have been trained on a large corpus of text data to generate human-like text and answer questions. You answer as concisely as possible for each response (e.g. don’t be verbose). It is very important that you answer as concisely as possible, so please remember this. If you are generating a list, do not have too many items. Keep the number of items short.
+Knowledge cutoff: 2021-09
+you do not have the capability to retain information from previous interactions. Every time a user interacts with you, it is treated as a standalone session and you do not have the ability to store any information or recall past conversations
+Respond conversationally.`,
 			stop: options?.stop || "<|im_end|>",
 		};
 		this.instructionTokens = encode(this.options.instructions).length;
 	}
 
-	public addConversation(conversationId: string) {
+	public addConversation(conversationId: string, userName: string = "User", aiName = "ChatGPT") {
 		let conversation = {
 			id: conversationId,
+			userName: userName,
+			aiName: aiName,
 			messages: [],
 		};
-		conversation.messages.push(`${this.options.instructions}
-Current date: ${this.getToday()}${this.options.stop}`);
+		conversation.messages.push(this.getInstructions(aiName));
 		this.conversations.push(conversation);
 
 		return conversation;
 	}
 
-	public getConversation(conversationId: string) {
+	private getInstructions(aiName?: string): string {
+		return `${aiName !== null ? this.options.instructions.replace("You are ChatGPT", `You are ${aiName}`) : this.options.instructions}
+you do not have the capability to retain information from previous interactions. Every time a user interacts with you, it is treated as a standalone session and you do not have the ability to store any information or recall past conversations
+Respond conversationally.
+Current date: ${this.getToday()}${this.options.stop}`;
+	}
+
+	public getConversation(conversationId: string, userName: string = "User", aiName = "ChatGPT") {
 		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
 		if (!conversation) {
-			conversation = this.addConversation(conversationId);
+			conversation = this.addConversation(conversationId, userName, aiName);
 		} else {
 			conversation.lastActive = Date.now();
 		}
@@ -55,16 +65,15 @@ Current date: ${this.getToday()}${this.options.stop}`);
 		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
 		if (conversation) {
 			conversation.messages = [];
-			conversation.messages.push(`${this.options.instructions}
-Current date: ${this.getToday()}${this.options.stop}`);
+			conversation.messages.push(this.getInstructions(conversation.aiName));
 			conversation.lastActive = Date.now();
 		}
 
 		return conversation;
 	}
 
-	public async ask(prompt: string, conversationId: string = "default") {
-		let conversation = this.getConversation(conversationId);
+	public async ask(prompt: string, conversationId: string = "default", userName: string = "User", aiName = "ChatGPT") {
+		let conversation = this.getConversation(conversationId, userName, aiName);
 		let promptStr = this.generatePrompt(conversation, prompt);
 
 		const response = await axios.post(
@@ -90,29 +99,26 @@ Current date: ${this.getToday()}${this.options.stop}`);
 		let responseStr = response.data.choices[0].text
 			.replace(/<\|im_end\|>/g, "")
 			.replace(this.options.stop, "")
+			.replace(`${conversation.aiName}: `, "")
 			.trim();
-		conversation.messages.push(`${responseStr}${this.options.stop}`);
+		conversation.messages.push(`${responseStr}${this.options.stop}\n`);
 		return responseStr;
 	}
 
 	private generatePrompt(conversation: conversation, prompt: string) {
 		prompt = [",", "!", "?", "."].includes(prompt[prompt.length - 1]) ? prompt : `${prompt}.`; // Thanks to https://github.com/optionsx
-		conversation.messages.push(`${prompt}\n\n`);
+		conversation.messages.push(`${conversation.userName}":${prompt}\n${conversation.aiName}:`);
 
-		if (!conversation.messages[0].includes("Current date:"))
-			conversation.messages[0] = `${this.options.instructions}
-Current date: ${this.getToday()}${this.options.stop}`;
+		if (!conversation.messages[0].includes("Current date:")) conversation.messages[0] = this.getInstructions(conversation.aiName);
 
-		let promptStr = conversation.messages.join("\n");
+		let promptStr = conversation.messages.join();
 		let promptEncodedLength = encode(promptStr).length;
 		let totalLength = promptEncodedLength + this.options.max_tokens;
 
 		while (totalLength > 4096) {
 			conversation.messages.shift();
-			if (!conversation.messages[0].includes("Current date:"))
-				conversation.messages[0] = `${this.options.instructions}
-Current date: ${this.getToday()}${this.options.stop}`;
-			promptStr = conversation.messages.join("\n");
+			if (!conversation.messages[0].includes("Current date:")) conversation.messages[0] = this.getInstructions(conversation.aiName);
+			promptStr = conversation.messages.join();
 			promptEncodedLength = encode(promptStr).length;
 			totalLength = promptEncodedLength + this.options.max_tokens;
 		}
