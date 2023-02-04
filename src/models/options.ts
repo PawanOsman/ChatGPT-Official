@@ -7,6 +7,7 @@ interface options {
 	presence_penalty?: number;
 	instructions?: string;
 	stop?: string;
+	aiName?: string;
 }
 
 export default options;
