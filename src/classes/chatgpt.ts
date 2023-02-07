@@ -107,7 +107,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 
 		try {
 			let responseStr: string;
-			if (this.options.revProxy) {
+			if (!this.options.revProxy) {
 				const response = await this.openAi.createCompletion({
 					model: this.options.model,
 					prompt: promptStr,
@@ -150,7 +150,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 
 		try {
 			let responseStr: string = "";
-			if (this.options.revProxy) {
+			if (!this.options.revProxy) {
 				const response = await this.openAi.createCompletion(
 					{
 						model: this.options.model,
