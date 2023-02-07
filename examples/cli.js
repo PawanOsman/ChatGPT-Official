@@ -6,7 +6,9 @@ const rl = readline.createInterface({
   output: process.stdout
 });
 
-let bot = new ChatGPT(process.env.OPENAI_API_KEY);
+let bot = new ChatGPT(process.env.OPENAI_API_KEY, {
+  revProxy: "https://chatgpt.pawan.krd/conversation",
+});
 
 async function main() {
   while (true) {
