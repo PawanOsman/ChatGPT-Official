@@ -1,8 +1,10 @@
-interface conversation {
+import Message from "./message.js";
+
+interface Conversation {
 	id: string;
-	messages: string[];
+	messages: Message[];
 	userName: string;
 	lastActive?: number;
 }
 
-export default conversation;
+export default Conversation;

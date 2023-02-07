@@ -16,8 +16,11 @@ async function main() {
       });
     });
 
-    let response = await bot.ask(prompt);
-    console.log(`ChatGPT: ${response}`);
+    process.stdout.write("ChatGPT: ");
+    await bot.askStream(res => {
+      process.stdout.write(res.toString());
+    }, prompt);
+    console.log();
   }
 }
 

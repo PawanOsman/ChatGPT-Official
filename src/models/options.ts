@@ -1,4 +1,4 @@
-interface options {
+interface Options {
 	model?: string;
 	temperature?: number;
 	max_tokens?: number;
@@ -8,6 +8,7 @@ interface options {
 	instructions?: string;
 	stop?: string;
 	aiName?: string;
+	revProxy?: string;
 }
 
-export default options;
+export default Options;
