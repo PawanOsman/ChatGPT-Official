@@ -19,7 +19,7 @@ class ChatGPT {
 			model: options?.model || "text-chat-davinci-002-20221122", // default model updated to an older model (2022-11-22) found by @canfam - Discord:pig#8932 // you can use the newest model (2023-01-26) using my private API https://gist.github.com/PawanOsman/be803be44caed2449927860956b240ad
 			temperature: options?.temperature || 0.7,
 			max_tokens: options?.max_tokens || 512,
-			top_p: options?.top_p || 0.1,
+			top_p: options?.top_p || 0.9,
 			frequency_penalty: options?.frequency_penalty || 0,
 			presence_penalty: options?.presence_penalty || 0,
 			instructions: options?.instructions || `You are ChatGPT, a language model developed by OpenAI. You are designed to respond to user input in a conversational manner, Answer as concisely as possible. Your training data comes from a diverse range of internet text and You have been trained to generate human-like responses to various questions and prompts. You can provide information on a wide range of topics, but your knowledge is limited to what was present in your training data, which has a cutoff date of 2021. You strive to provide accurate and helpful information to the best of your ability.\nKnowledge cutoff: 2021-09`,
