@@ -11,7 +11,6 @@ class ChatGPT {
 	public conversations: Conversation[];
 	public options: Options;
 	private openAi: OpenAIApi;
-	public instructionTokens: number;
 	constructor(key: string, options?: Options) {
 		this.key = key;
 		this.conversations = [];
@@ -29,7 +28,6 @@ class ChatGPT {
 			revProxy: options?.revProxy,
 		};
 		this.openAi = new OpenAIApi(new Configuration({ apiKey: this.key }));
-		this.instructionTokens = encode(this.options.instructions).length;
 	}
 
 	private async *chunksToLines(chunksAsync: any) {
@@ -157,7 +155,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		if (this.options.moderation) {
 			let flagged = await this.moderate(prompt);
 			if (flagged) {
-				for (let chunk in "Your message was flagged as inappropriate and was not sent.".split("")){
+				for (let chunk in "Your message was flagged as inappropriate and was not sent.".split("")) {
 					data(chunk);
 					await this.wait(100);
 				}
