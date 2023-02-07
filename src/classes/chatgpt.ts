@@ -123,10 +123,9 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 				responseStr = await this.aksRevProxy(promptStr);
 			}
 
-			let regex = new RegExp(`\n${conversation.userName}:.*`, "gs");
-
 			responseStr = responseStr
-				.replace(regex, "")
+				.replace(new RegExp(`\n${conversation.userName}:.*`, "gs"), "")
+				.replace(new RegExp(`${conversation.userName}:.*`, "gs"), "")
 				.replace(/<\|im_end\|>/g, "")
 				.replace(this.options.stop, "")
 				.replace(`${this.options.aiName}: `, "")
@@ -179,10 +178,9 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 				responseStr = await this.aksRevProxy(promptStr, data);
 			}
 
-			let regex = new RegExp(`\n${conversation.userName}:.*`, "gs");
-
 			responseStr = responseStr
-				.replace(regex, "")
+				.replace(new RegExp(`\n${conversation.userName}:.*`, "gs"), "")
+				.replace(new RegExp(`${conversation.userName}:.*`, "gs"), "")
 				.replace(/<\|im_end\|>/g, "")
 				.replace(this.options.stop, "")
 				.replace(`${this.options.aiName}: `, "")
