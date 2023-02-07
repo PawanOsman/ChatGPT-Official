@@ -8,6 +8,7 @@ interface Options {
 	instructions?: string;
 	stop?: string;
 	aiName?: string;
+	moderation?: boolean;
 	revProxy?: string;
 }
 

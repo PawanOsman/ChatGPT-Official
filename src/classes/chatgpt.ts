@@ -25,6 +25,7 @@ class ChatGPT {
 			instructions: options?.instructions || `You are ChatGPT, a language model developed by OpenAI. You are designed to respond to user input in a conversational manner, Answer as concisely as possible. Your training data comes from a diverse range of internet text and You have been trained to generate human-like responses to various questions and prompts. You can provide information on a wide range of topics, but your knowledge is limited to what was present in your training data, which has a cutoff date of 2021. You strive to provide accurate and helpful information to the best of your ability.\nKnowledge cutoff: 2021-09`,
 			stop: options?.stop || "<|im_end|>",
 			aiName: options?.aiName || "ChatGPT",
+			moderation: options?.moderation || false,
 			revProxy: options?.revProxy,
 		};
 		this.openAi = new OpenAIApi(new Configuration({ apiKey: this.key }));
@@ -105,6 +106,13 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		let conversation = this.getConversation(conversationId, userName);
 		let promptStr = this.generatePrompt(conversation, prompt);
 
+		if (this.options.moderation) {
+			let flagged = await this.moderate(promptStr);
+			if (flagged) {
+				return "Your message was flagged as inappropriate and was not sent.";
+			}
+		}
+
 		try {
 			let responseStr: string;
 			if (!this.options.revProxy) {
@@ -145,6 +153,18 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 
 	public async askStream(data: (arg0: string) => void, prompt: string, conversationId: string = "default", userName: string = "User") {
 		let conversation = this.getConversation(conversationId, userName);
+
+		if (this.options.moderation) {
+			let flagged = await this.moderate(prompt);
+			if (flagged) {
+				for (let chunk in "Your message was flagged as inappropriate and was not sent.".split("")){
+					data(chunk);
+					await this.wait(100);
+				}
+				return "Your message was flagged as inappropriate and was not sent.";
+			}
+		}
+
 		let promptStr = this.generatePrompt(conversation, prompt);
 
 		try {
@@ -211,7 +231,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		}
 	}
 
-	public async aksRevProxy(prompt: string, data: (arg0: string) => void = (_) => {}) {
+	private async aksRevProxy(prompt: string, data: (arg0: string) => void = (_) => {}) {
 		try {
 			const response = await axios.post(
 				this.options.revProxy,
@@ -274,6 +294,13 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		return promptStr;
 	}
 
+	public async moderate(prompt: string) {
+		let response = await this.openAi.createModeration({
+			input: prompt,
+		});
+		return response.data.results[0].flagged;
+	}
+
 	private convToString(conversation: Conversation) {
 		let messages: string[] = [];
 		for (let i = 0; i < conversation.messages.length; i++) {
@@ -305,6 +332,10 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		hours = hours ? hours : 12;
 		minutes = minutes < 10 ? `0${minutes}` : minutes;
 		return `${hours}:${minutes} ${ampm}`;
+	}
+
+	private wait(ms: number) {
+		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 }
 
