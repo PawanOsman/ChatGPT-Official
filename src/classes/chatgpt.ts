@@ -8,6 +8,7 @@ import MessageType from "../enums/message-type.js";
 
 class ChatGPT {
 	public key: string;
+	public accessToken: string;
 	public conversations: Conversation[];
 	public options: Options;
 	private openAi: OpenAIApi;
@@ -15,7 +16,7 @@ class ChatGPT {
 		this.key = key;
 		this.conversations = [];
 		this.options = {
-			model: options?.model || "text-chat-davinci-002-20221122", // default model updated to an older model (2022-11-22) found by @canfam - Discord:pig#8932 // you can use the newest model (2023-01-26) using my private API https://gist.github.com/PawanOsman/be803be44caed2449927860956b240ad
+			model: options?.model || "text-davinci-003", // default model
 			temperature: options?.temperature || 0.7,
 			max_tokens: options?.max_tokens || 512,
 			top_p: options?.top_p || 0.9,
@@ -101,10 +102,11 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	}
 
 	public async ask(prompt: string, conversationId: string = "default", userName: string = "User") {
+		if (!this.key.startsWith("sk-")) if (!this.accessToken || !this.validateToken(this.accessToken)) await this.getTokens();
 		let conversation = this.getConversation(conversationId, userName);
 		let promptStr = this.generatePrompt(conversation, prompt);
 
-		if (this.options.moderation) {
+		if (this.options.moderation && this.key.startsWith("sk-")) {
 			let flagged = await this.moderate(promptStr);
 			if (flagged) {
 				return "Your message was flagged as inappropriate and was not sent.";
@@ -150,9 +152,10 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	}
 
 	public async askStream(data: (arg0: string) => void, prompt: string, conversationId: string = "default", userName: string = "User") {
+		if (!this.key.startsWith("sk-")) if (!this.accessToken || !this.validateToken(this.accessToken)) await this.getTokens();
 		let conversation = this.getConversation(conversationId, userName);
 
-		if (this.options.moderation) {
+		if (this.options.moderation && this.key.startsWith("sk-")) {
 			let flagged = await this.moderate(prompt);
 			if (flagged) {
 				for (let chunk in "Your message was flagged as inappropriate and was not sent.".split("")) {
@@ -230,6 +233,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	}
 
 	private async aksRevProxy(prompt: string, data: (arg0: string) => void = (_) => {}) {
+		if (!this.key.startsWith("sk-")) if (!this.accessToken || !this.validateToken(this.accessToken)) await this.getTokens();
 		try {
 			const response = await axios.post(
 				this.options.revProxy,
@@ -242,13 +246,14 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 					frequency_penalty: this.options.frequency_penalty,
 					presence_penalty: this.options.presence_penalty,
 					stop: [this.options.stop],
+					stream: true,
 				},
 				{
 					responseType: "stream",
 					headers: {
 						Accept: "text/event-stream",
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${this.key}`,
+						Authorization: `Bearer ${this.key.startsWith("sk-") ? this.key : this.accessToken}`,
 					},
 				},
 			);
@@ -334,6 +339,38 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 
 	private wait(ms: number) {
 		return new Promise((resolve) => setTimeout(resolve, ms));
+	}
+
+	private validateToken(token: string) {
+		if (!token) return false;
+		const parsed = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
+
+		return Date.now() <= parsed.exp * 1000;
+	}
+
+	async getTokens() {
+		if (!this.key) {
+			throw new Error("No session token provided");
+		}
+
+		const response = await axios.request({
+			method: "GET",
+			url: Buffer.from("aHR0cHM6Ly9leHBsb3Jlci5hcGkub3BlbmFpLmNvbS9hcGkvYXV0aC9zZXNzaW9u", "base64").toString("ascii"),
+			headers: {
+				"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0",
+				Cookie: `__Secure-next-auth.session-token=${this.key}`,
+			},
+		});
+
+		try {
+			const cookies = response.headers["set-cookie"];
+			const sessionCookie = cookies.find((cookie) => cookie.startsWith("__Secure-next-auth.session-token"));
+
+			this.key = sessionCookie.split("=")[1];
+			this.accessToken = response.data.accessToken;
+		} catch (err) {
+			throw new Error(`Failed to fetch new session tokens due to: ${err}`);
+		}
 	}
 }
 
