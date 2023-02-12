@@ -308,7 +308,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		let messages: string[] = [];
 		for (let i = 0; i < conversation.messages.length; i++) {
 			let message = conversation.messages[i];
-			if (i === conversation.messages.length - 1) {
+			if (i === 0) {
 				messages.push(this.getInstructions(conversation.userName));
 			}
 			messages.push(`${message.type === MessageType.User ? conversation.userName : this.options.aiName}: ${conversation.messages[i].content}${this.options.stop}`);
