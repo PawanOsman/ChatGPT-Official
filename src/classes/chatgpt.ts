@@ -29,6 +29,7 @@ class ChatGPT {
 			revProxy: options?.revProxy,
 		};
 		this.openAi = new OpenAIApi(new Configuration({ apiKey: this.key }));
+		if (!this.key.startsWith("sk-")) if (!this.accessToken || !this.validateToken(this.accessToken)) this.getTokens();
 	}
 
 	private async *chunksToLines(chunksAsync: any) {
@@ -246,7 +247,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 					frequency_penalty: this.options.frequency_penalty,
 					presence_penalty: this.options.presence_penalty,
 					stop: [this.options.stop],
-					stream: true,
+					// stream: true,
 				},
 				{
 					responseType: "stream",
@@ -266,10 +267,23 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 			});
 
 			await new Promise((resolve) => response.data.on("end", resolve));
-
-			return responseStr;
+			responseStr = responseStr.trim();
+			if (this.isJSON(responseStr)) {
+				let jsonData = JSON.parse(responseStr);
+				let response = jsonData?.choices[0]?.text;
+				return response ?? "";
+			} else return responseStr;
 		} catch (error: any) {
 			throw new Error(error?.response?.data?.error?.message);
+		}
+	}
+
+	private isJSON(str: string) {
+		try {
+			JSON.parse(str);
+			return true;
+		} catch (e) {
+			return false;
 		}
 	}
 
