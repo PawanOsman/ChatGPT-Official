@@ -18,31 +18,74 @@ To install the package, run the following command:
 npm install chatgpt-official
 ```
 
+### Official Chat Completion API from OpenAI
+
 ```javascript
-import ChatGPT from "chatgpt-official";
+import { ChatGPT } from "chatgpt-official";
 
 let bot = new ChatGPT("<OPENAI_API_KEY>");
 
 let response = await bot.ask("Hello?");
 console.log(response);
 ```
-## Usage
+
+### Creating ChatGPT with Official OpenAI Completion API
 
 ```javascript
-import ChatGPT from "chatgpt-official";
+import OpenAI from "chatgpt-official";
+
+let bot = new OpenAI("<OPENAI_API_KEY>");
+
+let response = await bot.ask("Hello?");
+console.log(response);
+```
+
+## Usage: Official Chat Completion API from OpenAI
+
+```javascript
+import { ChatGPT } from "chatgpt-official";
 
 let options = {
-  temperature: 0.7, // OpenAI parameter
-  max_tokens: 256, // OpenAI parameter [Max response size by tokens]
-  top_p: 1, // OpenAI parameter
-  frequency_penalty: 0, // OpenAI parameter
-  presence_penalty: 0, // OpenAI parameter
-  instructions: `You are ChatGPT, a large language model trained by OpenAI.`, // initial instructions for the bot
-  model: "text-davinci-003", // OpenAI parameter  `text-davinci-003` is PAID
-  stop: "<|im_end|>", // OpenAI parameter
-}
+	temperature: 0.7, // OpenAI parameter
+	max_tokens: 100, // OpenAI parameter [Max response size by tokens]
+	top_p: 0.9, // OpenAI parameter
+	frequency_penalty: 0, // OpenAI parameter
+	presence_penalty: 0, // OpenAI parameter
+	instructions: `You are ChatGPT, a large language model trained by OpenAI.`, // initial instructions for the bot
+	model: "gpt-3.5-turbo", // OpenAI parameter  `gpt-3.5-turbo` is PAID
+};
 
-let bot = new ChatGPT("<OPENAI_API_KEY>", options);  // Note: options is optional
+let bot = new ChatGPT("<OPENAI_API_KEY>", options); // Note: options is optional
+
+let response = await bot.ask("Hello?");
+console.log(response);
+
+let conversationId = "conversation name";
+let response1 = await bot.ask("Hello?", conversationId);
+console.log(response1);
+
+let conversationId2 = "another conversation name";
+let response2 = await bot.ask("Hello?", conversationId2);
+console.log(response2);
+```
+
+## Usage: Creating ChatGPT with Official OpenAI Completion API
+
+```javascript
+import OpenAI from "chatgpt-official";
+
+let options = {
+	temperature: 0.7, // OpenAI parameter
+	max_tokens: 256, // OpenAI parameter [Max response size by tokens]
+	top_p: 0.9, // OpenAI parameter
+	frequency_penalty: 0, // OpenAI parameter
+	presence_penalty: 0, // OpenAI parameter
+	instructions: `You are ChatGPT, a large language model trained by OpenAI.`, // initial instructions for the bot
+	model: "text-davinci-003", // OpenAI parameter  `text-davinci-003` is PAID
+	stop: "<|im_end|>", // OpenAI parameter
+};
+
+let bot = new OpenAI("<OPENAI_API_KEY>", options); // Note: options is optional
 
 let response = await bot.ask("Hello?");
 console.log(response);
