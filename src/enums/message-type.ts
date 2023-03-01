@@ -1,6 +1,7 @@
 enum MessageType {
+	System,
 	User,
-	AI,
+	Assistant,
 }
 
 export default MessageType;

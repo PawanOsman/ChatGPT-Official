@@ -1,9 +1,9 @@
 import { encode } from "gpt-3-encoder";
-import { Configuration, OpenAIApi } from "openai";
 import axios from "axios";
 
-import Options from "../models/options.js";
+import Options from "../models/chatgpt-options.js";
 import Conversation from "../models/conversation.js";
+import Message from "../models/chatgpt-message.js";
 import MessageType from "../enums/message-type.js";
 
 class ChatGPT {
@@ -11,25 +11,18 @@ class ChatGPT {
 	public accessToken: string;
 	public conversations: Conversation[];
 	public options: Options;
-	private openAi: OpenAIApi;
 	constructor(key: string, options?: Options) {
 		this.key = key;
 		this.conversations = [];
 		this.options = {
-			model: options?.model || "text-davinci-003", // default model
+			model: options?.model || "gpt-3.5-turbo", // default model
 			temperature: options?.temperature || 0.7,
-			max_tokens: options?.max_tokens || 512,
+			max_tokens: options?.max_tokens || 100,
 			top_p: options?.top_p || 0.9,
 			frequency_penalty: options?.frequency_penalty || 0,
 			presence_penalty: options?.presence_penalty || 0,
 			instructions: options?.instructions || `You are ChatGPT, a language model developed by OpenAI. You are designed to respond to user input in a conversational manner, Answer as concisely as possible. Your training data comes from a diverse range of internet text and You have been trained to generate human-like responses to various questions and prompts. You can provide information on a wide range of topics, but your knowledge is limited to what was present in your training data, which has a cutoff date of 2021. You strive to provide accurate and helpful information to the best of your ability.\nKnowledge cutoff: 2021-09`,
-			stop: options?.stop || "<|im_end|>",
-			aiName: options?.aiName || "ChatGPT",
-			moderation: options?.moderation || false,
-			revProxy: options?.revProxy,
 		};
-		this.openAi = new OpenAIApi(new Configuration({ apiKey: this.key }));
-		if (!this.key.startsWith("sk-")) if (!this.accessToken || !this.validateToken(this.accessToken)) this.getTokens();
 	}
 
 	private async *chunksToLines(chunksAsync: any) {
@@ -61,11 +54,9 @@ class ChatGPT {
 	}
 
 	private getInstructions(username: string): string {
-		return `[START_INSTRUCTIONS]
-${this.options.instructions}
+		return `${this.options.instructions}
 Current date: ${this.getToday()}
-Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talking to: ${username}` : ""}
-[END_INSTRUCTIONS]${this.options.stop}\n`;
+Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talking to: ${username}` : ""}`;
 	}
 
 	public addConversation(conversationId: string, userName: string = "User") {
@@ -103,233 +94,115 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	}
 
 	public async ask(prompt: string, conversationId: string = "default", userName: string = "User") {
-		if (!this.key.startsWith("sk-")) if (!this.accessToken || !this.validateToken(this.accessToken)) await this.getTokens();
-		let conversation = this.getConversation(conversationId, userName);
-		let promptStr = this.generatePrompt(conversation, prompt);
-
-		if (this.options.moderation && this.key.startsWith("sk-")) {
-			let flagged = await this.moderate(promptStr);
-			if (flagged) {
-				return "Your message was flagged as inappropriate and was not sent.";
-			}
-		}
-
-		try {
-			let responseStr: string;
-			if (!this.options.revProxy) {
-				const response = await this.openAi.createCompletion({
-					model: this.options.model,
-					prompt: promptStr,
-					temperature: this.options.temperature,
-					max_tokens: this.options.max_tokens,
-					top_p: this.options.top_p,
-					frequency_penalty: this.options.frequency_penalty,
-					presence_penalty: this.options.presence_penalty,
-					stop: [this.options.stop],
-				});
-				responseStr = response.data.choices[0].text;
-			} else {
-				responseStr = await this.aksRevProxy(promptStr);
-			}
-
-			responseStr = responseStr
-				.replace(new RegExp(`\n${conversation.userName}:.*`, "gs"), "")
-				.replace(new RegExp(`${conversation.userName}:.*`, "gs"), "")
-				.replace(/<\|im_end\|>/g, "")
-				.replace(this.options.stop, "")
-				.replace(`${this.options.aiName}: `, "")
-				.trim();
-
-			conversation.messages.push({
-				content: responseStr,
-				type: MessageType.AI,
-				date: Date.now(),
-			});
-
-			return responseStr;
-		} catch (error: any) {
-			throw new Error(error?.response?.data?.error?.message);
-		}
+		return await this.askStream((data) => {}, prompt, conversationId, userName);
 	}
 
 	public async askStream(data: (arg0: string) => void, prompt: string, conversationId: string = "default", userName: string = "User") {
-		if (!this.key.startsWith("sk-")) if (!this.accessToken || !this.validateToken(this.accessToken)) await this.getTokens();
 		let conversation = this.getConversation(conversationId, userName);
-
-		if (this.options.moderation && this.key.startsWith("sk-")) {
-			let flagged = await this.moderate(prompt);
-			if (flagged) {
-				for (let chunk in "Your message was flagged as inappropriate and was not sent.".split("")) {
-					data(chunk);
-					await this.wait(100);
-				}
-				return "Your message was flagged as inappropriate and was not sent.";
-			}
-		}
-
 		let promptStr = this.generatePrompt(conversation, prompt);
 
 		try {
-			let responseStr: string = "";
-			if (!this.options.revProxy) {
-				const response = await this.openAi.createCompletion(
-					{
-						model: this.options.model,
-						prompt: promptStr,
-						temperature: this.options.temperature,
-						max_tokens: this.options.max_tokens,
-						top_p: this.options.top_p,
-						frequency_penalty: this.options.frequency_penalty,
-						presence_penalty: this.options.presence_penalty,
-						stop: [this.options.stop],
-						stream: true,
-					},
-					{ responseType: "stream" },
-				);
-				for await (const message of this.streamCompletion(response.data)) {
-					try {
-						const parsed = JSON.parse(message);
-						const { text } = parsed.choices[0];
-						responseStr += text;
-						data(text);
-					} catch (error) {
-						console.error("Could not JSON parse stream message", message, error);
-					}
-				}
-			} else {
-				responseStr = await this.aksRevProxy(promptStr, data);
-			}
-
-			responseStr = responseStr
-				.replace(new RegExp(`\n${conversation.userName}:.*`, "gs"), "")
-				.replace(new RegExp(`${conversation.userName}:.*`, "gs"), "")
-				.replace(/<\|im_end\|>/g, "")
-				.replace(this.options.stop, "")
-				.replace(`${this.options.aiName}: `, "")
-				.trim();
-
-			conversation.messages.push({
-				content: responseStr,
-				type: MessageType.AI,
-				date: Date.now(),
-			});
-
-			return responseStr;
-		} catch (error: any) {
-			if (error.response?.status) {
-				console.error(error.response.status, error.message);
-				error.response.data.on("data", (data: any) => {
-					const message = data.toString();
-					try {
-						const parsed = JSON.parse(message);
-						console.error("An error occurred during OpenAI request: ", parsed);
-					} catch (error) {
-						console.error("An error occurred during OpenAI request: ", message);
-					}
-				});
-			} else {
-				console.error("An error occurred during OpenAI request", error);
-			}
-		}
-	}
-
-	private async aksRevProxy(prompt: string, data: (arg0: string) => void = (_) => {}) {
-		if (!this.key.startsWith("sk-")) if (!this.accessToken || !this.validateToken(this.accessToken)) await this.getTokens();
-		try {
 			const response = await axios.post(
-				this.options.revProxy,
+				`https://api.openai.com/v1/chat/completions`,
 				{
 					model: this.options.model,
-					prompt: prompt,
+					messages: promptStr,
 					temperature: this.options.temperature,
 					max_tokens: this.options.max_tokens,
 					top_p: this.options.top_p,
 					frequency_penalty: this.options.frequency_penalty,
 					presence_penalty: this.options.presence_penalty,
-					stop: [this.options.stop],
-					// stream: true,
+					stream: true,
 				},
 				{
 					responseType: "stream",
 					headers: {
 						Accept: "text/event-stream",
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${this.key.startsWith("sk-") ? this.key : this.accessToken}`,
+						Authorization: `Bearer ${this.key}`,
 					},
 				},
 			);
 
 			let responseStr = "";
 
-			response.data.on("data", (chunk: string) => {
-				responseStr += chunk;
-				data(chunk);
-			});
+			for await (const message of this.streamCompletion(response.data)) {
+				try {
+					const parsed = JSON.parse(message);
+					const { content } = parsed.choices[0].delta;
+					if (content) {
+						responseStr += content;
+						data(content);
+					}
+				} catch (error) {
+					console.error("Could not JSON parse stream message", message, error);
+				}
+			}
 
-			await new Promise((resolve) => response.data.on("end", resolve));
-			responseStr = responseStr.trim();
-			if (this.isJSON(responseStr)) {
-				let jsonData = JSON.parse(responseStr);
-				let response = jsonData?.choices[0]?.text;
-				return response ?? "";
-			} else return responseStr;
+			return responseStr;
 		} catch (error: any) {
-			throw new Error(error?.response?.data?.error?.message);
+			if (error.response && error.response.data && error.response.headers["content-type"] === "application/json") {
+				let errorResponseStr = "";
+
+				for await (const message of error.response.data) {
+					errorResponseStr += message;
+				}
+
+				const errorResponseJson = JSON.parse(errorResponseStr);
+				throw new Error(errorResponseJson.error.message);
+			} else {
+				throw new Error(error.message);
+			}
 		}
 	}
 
-	private isJSON(str: string) {
-		try {
-			JSON.parse(str);
-			return true;
-		} catch (e) {
-			return false;
-		}
-	}
-
-	private generatePrompt(conversation: Conversation, prompt: string) {
-		prompt = [",", "!", "?", "."].includes(prompt[prompt.length - 1]) ? prompt : `${prompt}.`; // Thanks to https://github.com/optionsx
-
+	private generatePrompt(conversation: Conversation, prompt: string): Message[] {
 		conversation.messages.push({
 			content: prompt,
 			type: MessageType.User,
 			date: Date.now(),
 		});
 
-		let promptStr = this.convToString(conversation);
-		let promptEncodedLength = encode(promptStr).length;
+		let messages = this.generateMessages(conversation);
+		let promptEncodedLength = this.countTokens(messages);
 		let totalLength = promptEncodedLength + this.options.max_tokens;
 
-		while (totalLength > 4096) {
+		while (totalLength > 99999999999999999999999999999) {
 			conversation.messages.shift();
-			promptStr = this.convToString(conversation);
-			promptEncodedLength = encode(promptStr).length;
+			messages = this.generateMessages(conversation);
+			promptEncodedLength = this.countTokens(messages);
 			totalLength = promptEncodedLength + this.options.max_tokens;
 		}
 
 		conversation.lastActive = Date.now();
-		return promptStr;
+		return messages;
 	}
 
-	public async moderate(prompt: string) {
-		let response = await this.openAi.createModeration({
-			input: prompt,
-		});
-		return response.data.results[0].flagged;
-	}
-
-	private convToString(conversation: Conversation) {
-		let messages: string[] = [];
+	private generateMessages(conversation: Conversation): Message[] {
+		let messages: Message[] = [];
 		for (let i = 0; i < conversation.messages.length; i++) {
 			let message = conversation.messages[i];
 			if (i === 0) {
-				messages.push(this.getInstructions(conversation.userName));
+				messages.push({
+					role: "system",
+					content: this.getInstructions(conversation.userName),
+				});
 			}
-			messages.push(`${message.type === MessageType.User ? conversation.userName : this.options.aiName}: ${conversation.messages[i].content}${this.options.stop}`);
+			messages.push({
+				role: message.type === MessageType.User ? "user" : "assistant",
+				content: message.content,
+			});
 		}
-		messages.push(`${this.options.aiName}: `);
-		let result = messages.join("\n");
-		return result;
+		return messages;
+	}
+
+	private countTokens(messages: Message[]): number {
+		let tokens: number = 0;
+		for (let i = 0; i < messages.length; i++) {
+			let message = messages[i];
+			tokens += encode(message.content).length;
+		}
+		return tokens;
 	}
 
 	private getToday() {
@@ -349,42 +222,6 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		hours = hours ? hours : 12;
 		minutes = minutes < 10 ? `0${minutes}` : minutes;
 		return `${hours}:${minutes} ${ampm}`;
-	}
-
-	private wait(ms: number) {
-		return new Promise((resolve) => setTimeout(resolve, ms));
-	}
-
-	private validateToken(token: string) {
-		if (!token) return false;
-		const parsed = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
-
-		return Date.now() <= parsed.exp * 1000;
-	}
-
-	async getTokens() {
-		if (!this.key) {
-			throw new Error("No session token provided");
-		}
-
-		const response = await axios.request({
-			method: "GET",
-			url: Buffer.from("aHR0cHM6Ly9leHBsb3Jlci5hcGkub3BlbmFpLmNvbS9hcGkvYXV0aC9zZXNzaW9u", "base64").toString("ascii"),
-			headers: {
-				"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/109.0",
-				Cookie: `__Secure-next-auth.session-token=${this.key}`,
-			},
-		});
-
-		try {
-			const cookies = response.headers["set-cookie"];
-			const sessionCookie = cookies.find((cookie) => cookie.startsWith("__Secure-next-auth.session-token"));
-
-			this.key = sessionCookie.split("=")[1];
-			this.accessToken = response.data.accessToken;
-		} catch (err) {
-			throw new Error(`Failed to fetch new session tokens due to: ${err}`);
-		}
 	}
 }
 
