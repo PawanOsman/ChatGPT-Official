@@ -8,6 +8,8 @@ const rl = readline.createInterface({
 
 let bot = new ChatGPT(process.env.OPENAI_API_KEY);
 
+// bot.onUsage = console.log;
+
 async function main() {
   while (true) {
     let prompt = await new Promise((resolve) => {
@@ -19,7 +21,7 @@ async function main() {
     process.stdout.write("ChatGPT: ");
     await bot.askStream(res => {
       process.stdout.write(res.toString());
-    }, prompt);
+    }, _ => { }, prompt);
     console.log();
   }
 }

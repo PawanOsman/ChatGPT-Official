@@ -6,6 +6,7 @@ interface ChatGPTOptions {
 	frequency_penalty?: number;
 	presence_penalty?: number;
 	instructions?: string;
+	max_conversation_tokens?: number;
 }
 
 export default ChatGPTOptions;

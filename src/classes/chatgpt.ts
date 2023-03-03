@@ -1,6 +1,7 @@
 import { encode } from "gpt-3-encoder";
 import axios from "axios";
 
+import Usage from "../models/chatgpt-usage.js";
 import Options from "../models/chatgpt-options.js";
 import Conversation from "../models/conversation.js";
 import Message from "../models/chatgpt-message.js";
@@ -11,6 +12,7 @@ class ChatGPT {
 	public accessToken: string;
 	public conversations: Conversation[];
 	public options: Options;
+	public onUsage: (usage: Usage) => void;
 	constructor(key: string, options?: Options) {
 		this.key = key;
 		this.conversations = [];
@@ -22,6 +24,7 @@ class ChatGPT {
 			frequency_penalty: options?.frequency_penalty || 0,
 			presence_penalty: options?.presence_penalty || 0,
 			instructions: options?.instructions || `You are ChatGPT, a language model developed by OpenAI. You are designed to respond to user input in a conversational manner, Answer as concisely as possible. Your training data comes from a diverse range of internet text and You have been trained to generate human-like responses to various questions and prompts. You can provide information on a wide range of topics, but your knowledge is limited to what was present in your training data, which has a cutoff date of 2021. You strive to provide accurate and helpful information to the best of your ability.\nKnowledge cutoff: 2021-09`,
+			max_conversation_tokens: options?.max_conversation_tokens || 4097,
 		};
 	}
 
@@ -94,13 +97,19 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	}
 
 	public async ask(prompt: string, conversationId: string = "default", userName: string = "User") {
-		return await this.askStream((data) => {}, prompt, conversationId, userName);
+		return await this.askStream(
+			(data) => {},
+			(data) => {},
+			prompt,
+			conversationId,
+			userName,
+		);
 	}
 
-	public async askStream(data: (arg0: string) => void, prompt: string, conversationId: string = "default", userName: string = "User") {
+	public async askStream(data: (arg0: string) => void, usage: (usage: Usage) => void, prompt: string, conversationId: string = "default", userName: string = "User") {
 		let conversation = this.getConversation(conversationId, userName);
 		let promptStr = this.generatePrompt(conversation, prompt);
-
+		let prompt_tokens = this.countTokens(promptStr);
 		try {
 			const response = await axios.post(
 				`https://api.openai.com/v1/chat/completions`,
@@ -139,6 +148,16 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 				}
 			}
 
+			let completion_tokens = encode(responseStr).length;
+
+			let usageData = {
+				prompt_tokens: prompt_tokens,
+				completion_tokens: completion_tokens,
+				total_tokens: prompt_tokens + completion_tokens,
+			};
+
+			usage(usageData);
+			if(this.onUsage) this.onUsage(usageData);
 			return responseStr;
 		} catch (error: any) {
 			if (error.response && error.response.data && error.response.headers["content-type"] === "application/json") {
@@ -167,7 +186,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		let promptEncodedLength = this.countTokens(messages);
 		let totalLength = promptEncodedLength + this.options.max_tokens;
 
-		while (totalLength > 99999999999999999999999999999) {
+		while (totalLength > this.options.max_conversation_tokens) {
 			conversation.messages.shift();
 			messages = this.generateMessages(conversation);
 			promptEncodedLength = this.countTokens(messages);
@@ -180,14 +199,12 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 
 	private generateMessages(conversation: Conversation): Message[] {
 		let messages: Message[] = [];
+		messages.push({
+			role: "system",
+			content: this.getInstructions(conversation.userName),
+		});
 		for (let i = 0; i < conversation.messages.length; i++) {
 			let message = conversation.messages[i];
-			if (i === 0) {
-				messages.push({
-					role: "system",
-					content: this.getInstructions(conversation.userName),
-				});
-			}
 			messages.push({
 				role: message.type === MessageType.User ? "user" : "assistant",
 				content: message.content,
