@@ -32,7 +32,7 @@ console.log(response);
 ### Creating ChatGPT with Official OpenAI Completion API
 
 ```javascript
-import OpenAI from "chatgpt-official";
+import { OpenAI } from "chatgpt-official";
 
 let bot = new OpenAI("<OPENAI_API_KEY>");
 
@@ -72,7 +72,7 @@ console.log(response2);
 ## Usage: Creating ChatGPT with Official OpenAI Completion API
 
 ```javascript
-import OpenAI from "chatgpt-official";
+import { OpenAI } from "chatgpt-official";
 
 let options = {
 	temperature: 0.7, // OpenAI parameter
