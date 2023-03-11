@@ -216,6 +216,13 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 			oAIKey.balance = (oAIKey.tokens / 1000) * this.options.price;
 			oAIKey.queries++;
 
+			conversation.messages.push({
+				id: randomUUID(),
+				content: responseStr,
+				type: MessageType.Assistant,
+				date: Date.now(),
+			});
+
 			return responseStr;
 		} catch (error: any) {
 			if (error.response && error.response.data && error.response.headers["content-type"] === "application/json") {
