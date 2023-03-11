@@ -1,5 +1,6 @@
-import { encode } from "gpt-3-encoder";
 import axios from "axios";
+import { randomUUID } from "crypto";
+import { encode } from "gpt-3-encoder";
 import Usage from "../models/chatgpt-usage.js";
 import Options from "../models/chatgpt-options.js";
 import Conversation from "../models/conversation.js";
@@ -7,15 +8,14 @@ import Message from "../models/chatgpt-message.js";
 import MessageType from "../enums/message-type.js";
 import AppDbContext from "./app-dbcontext.js";
 import OpenAIKey from "../models/openai-key.js";
+import { Configuration, OpenAIApi } from "openai";
 
 class ChatGPT {
-	public conversations: Conversation[];
 	public options: Options;
 	private db: AppDbContext;
 	public onUsage: (usage: Usage) => void;
 
 	constructor(key: string | string[], options?: Options) {
-		this.conversations = [];
 		this.db = new AppDbContext();
 		this.db.WaitForLoad().then(() => {
 			if (typeof key === "string") {
@@ -26,7 +26,7 @@ class ChatGPT {
 					balance: 0,
 					tokens: 0,
 				});
-			} else {
+			} else if (Array.isArray(key)) {
 				key.forEach((k) => {
 					if (this.db.keys.Any((x) => x.key === k)) return;
 					this.db.keys.Add({
@@ -48,6 +48,8 @@ class ChatGPT {
 			instructions: options?.instructions || `You are ChatGPT, a language model developed by OpenAI. You are designed to respond to user input in a conversational manner, Answer as concisely as possible. Your training data comes from a diverse range of internet text and You have been trained to generate human-like responses to various questions and prompts. You can provide information on a wide range of topics, but your knowledge is limited to what was present in your training data, which has a cutoff date of 2021. You strive to provide accurate and helpful information to the best of your ability.\nKnowledge cutoff: 2021-09`,
 			price: options?.price || 0.002,
 			max_conversation_tokens: options?.max_conversation_tokens || 4097,
+			endpoint: options?.endpoint || "https://api.openai.com/v1/chat/completions",
+			moderation: options?.moderation || false,
 		};
 	}
 
@@ -105,13 +107,13 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 			userName: userName,
 			messages: [],
 		};
-		this.conversations.push(conversation);
+		this.db.conversations.Add(conversation);
 
 		return conversation;
 	}
 
 	public getConversation(conversationId: string, userName: string = "User") {
-		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
+		let conversation = this.db.conversations.Where((conversation) => conversation.id === conversationId).FirstOrDefault();
 		if (!conversation) {
 			conversation = this.addConversation(conversationId, userName);
 		} else {
@@ -124,7 +126,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	}
 
 	public resetConversation(conversationId: string) {
-		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
+		let conversation = this.db.conversations.Where((conversation) => conversation.id === conversationId).FirstOrDefault();
 		if (conversation) {
 			conversation.messages = [];
 			conversation.lastActive = Date.now();
@@ -146,11 +148,23 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	public async askStream(data: (arg0: string) => void, usage: (usage: Usage) => void, prompt: string, conversationId: string = "default", userName: string = "User") {
 		let oAIKey = this.getOpenAIKey();
 		let conversation = this.getConversation(conversationId, userName);
+
+		if (this.options.moderation) {
+			let flagged = await this.moderate(prompt, oAIKey.key);
+			if (flagged) {
+				for (let chunk in "Your message was flagged as inappropriate and was not sent.".split("")) {
+					data(chunk);
+					await this.wait(100);
+				}
+				return "Your message was flagged as inappropriate and was not sent.";
+			}
+		}
+
 		let promptStr = this.generatePrompt(conversation, prompt);
 		let prompt_tokens = this.countTokens(promptStr);
 		try {
 			const response = await axios.post(
-				`https://api.openai.com/v1/chat/completions`,
+				this.options.endpoint,
 				{
 					model: this.options.model,
 					messages: promptStr,
@@ -199,7 +213,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 			if (this.onUsage) this.onUsage(usageData);
 
 			oAIKey.tokens += usageData.total_tokens;
-			oAIKey.balance = (usageData.total_tokens / 1000) * this.options.price;
+			oAIKey.balance = (oAIKey.tokens / 1000) * this.options.price;
 			oAIKey.queries++;
 
 			return responseStr;
@@ -219,8 +233,21 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		}
 	}
 
+	public async moderate(prompt: string, key: string) {
+		try {
+			let openAi = new OpenAIApi(new Configuration({ apiKey: key }));
+			let response = await openAi.createModeration({
+				input: prompt,
+			});
+			return response.data.results[0].flagged;
+		} catch (error) {
+			return false;
+		}
+	}
+
 	private generatePrompt(conversation: Conversation, prompt: string): Message[] {
 		conversation.messages.push({
+			id: randomUUID(),
 			content: prompt,
 			type: MessageType.User,
 			date: Date.now(),
@@ -283,6 +310,10 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		hours = hours ? hours : 12;
 		minutes = minutes < 10 ? `0${minutes}` : minutes;
 		return `${hours}:${minutes} ${ampm}`;
+	}
+
+	private wait(ms: number) {
+		return new Promise((resolve) => setTimeout(resolve, ms));
 	}
 }
 

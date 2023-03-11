@@ -3,17 +3,40 @@ import { Configuration, OpenAIApi } from "openai";
 import axios from "axios";
 
 import Options from "../models/options.js";
+import Usage from "../models/chatgpt-usage.js";
 import Conversation from "../models/conversation.js";
 import MessageType from "../enums/message-type.js";
+import AppDbContext from "./app-dbcontext.js";
+import OpenAIKey from "../models/openai-key.js";
+import { randomUUID } from "crypto";
 
 class OpenAI {
-	public key: string;
-	public conversations: Conversation[];
+	private db: AppDbContext;
 	public options: Options;
-	private openAi: OpenAIApi;
-	constructor(key: string, options?: Options) {
-		this.key = key;
-		this.conversations = [];
+	public onUsage: (usage: Usage) => void;
+	constructor(key: string | string[], options?: Options) {
+		this.db = new AppDbContext();
+		this.db.WaitForLoad().then(() => {
+			if (typeof key === "string") {
+				if (this.db.keys.Any((x) => x.key === key)) return;
+				this.db.keys.Add({
+					key: key,
+					queries: 0,
+					balance: 0,
+					tokens: 0,
+				});
+			} else if (Array.isArray(key)) {
+				key.forEach((k) => {
+					if (this.db.keys.Any((x) => x.key === k)) return;
+					this.db.keys.Add({
+						key: k,
+						queries: 0,
+						balance: 0,
+						tokens: 0,
+					});
+				});
+			}
+		});
 		this.options = {
 			model: options?.model || "text-davinci-003", // default model
 			temperature: options?.temperature || 0.7,
@@ -25,9 +48,24 @@ class OpenAI {
 			stop: options?.stop || "<|im_end|>",
 			aiName: options?.aiName || "ChatGPT",
 			moderation: options?.moderation || false,
-			revProxy: options?.revProxy,
+			endpoint: options?.endpoint || "https://api.openai.com/v1/completions",
+			price: options?.price || 0.02,
+			max_conversation_tokens: options?.max_conversation_tokens || 4097,
 		};
-		this.openAi = new OpenAIApi(new Configuration({ apiKey: this.key }));
+	}
+
+	private getOpenAIKey(): OpenAIKey {
+		let key = this.db.keys.OrderBy((x) => x.balance).FirstOrDefault();
+
+		if (key == null) {
+			key = this.db.keys.FirstOrDefault();
+		}
+
+		if (key == null) {
+			throw new Error("No keys available.");
+		}
+
+		return key;
 	}
 
 	private async *chunksToLines(chunksAsync: any) {
@@ -35,7 +73,7 @@ class OpenAI {
 		for await (const chunk of chunksAsync) {
 			const bufferChunk = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
 			previous += bufferChunk;
-			let eolIndex;
+			let eolIndex: number;
 			while ((eolIndex = previous.indexOf("\n")) >= 0) {
 				// line includes the EOL
 				const line = previous.slice(0, eolIndex + 1).trimEnd();
@@ -72,13 +110,13 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 			userName: userName,
 			messages: [],
 		};
-		this.conversations.push(conversation);
+		this.db.conversations.Add(conversation);
 
 		return conversation;
 	}
 
 	public getConversation(conversationId: string, userName: string = "User") {
-		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
+		let conversation = this.db.conversations.Where((conversation) => conversation.id === conversationId).FirstOrDefault();
 		if (!conversation) {
 			conversation = this.addConversation(conversationId, userName);
 		} else {
@@ -91,7 +129,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	}
 
 	public resetConversation(conversationId: string) {
-		let conversation = this.conversations.find((conversation) => conversation.id === conversationId);
+		let conversation = this.db.conversations.Where((conversation) => conversation.id === conversationId).FirstOrDefault();
 		if (conversation) {
 			conversation.messages = [];
 			conversation.lastActive = Date.now();
@@ -101,59 +139,21 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 	}
 
 	public async ask(prompt: string, conversationId: string = "default", userName: string = "User") {
-		let conversation = this.getConversation(conversationId, userName);
-		let promptStr = this.generatePrompt(conversation, prompt);
-
-		if (this.options.moderation) {
-			let flagged = await this.moderate(promptStr);
-			if (flagged) {
-				return "Your message was flagged as inappropriate and was not sent.";
-			}
-		}
-
-		try {
-			let responseStr: string;
-			if (!this.options.revProxy) {
-				const response = await this.openAi.createCompletion({
-					model: this.options.model,
-					prompt: promptStr,
-					temperature: this.options.temperature,
-					max_tokens: this.options.max_tokens,
-					top_p: this.options.top_p,
-					frequency_penalty: this.options.frequency_penalty,
-					presence_penalty: this.options.presence_penalty,
-					stop: [this.options.stop],
-				});
-				responseStr = response.data.choices[0].text;
-			} else {
-				responseStr = await this.aksRevProxy(promptStr);
-			}
-
-			responseStr = responseStr
-				.replace(new RegExp(`\n${conversation.userName}:.*`, "gs"), "")
-				.replace(new RegExp(`${conversation.userName}:.*`, "gs"), "")
-				.replace(/<\|im_end\|>/g, "")
-				.replace(this.options.stop, "")
-				.replace(`${this.options.aiName}: `, "")
-				.trim();
-
-			conversation.messages.push({
-				content: responseStr,
-				type: MessageType.Assistant,
-				date: Date.now(),
-			});
-
-			return responseStr;
-		} catch (error: any) {
-			throw new Error(error?.response?.data?.error?.message);
-		}
+		return await this.askStream(
+			(data) => {},
+			(data) => {},
+			prompt,
+			conversationId,
+			userName,
+		);
 	}
 
-	public async askStream(data: (arg0: string) => void, prompt: string, conversationId: string = "default", userName: string = "User") {
+	public async askStream(data: (arg0: string) => void, usage: (usage: Usage) => void, prompt: string, conversationId: string = "default", userName: string = "User") {
+		let oAIKey = this.getOpenAIKey();
 		let conversation = this.getConversation(conversationId, userName);
 
 		if (this.options.moderation) {
-			let flagged = await this.moderate(prompt);
+			let flagged = await this.moderate(prompt, oAIKey.key);
 			if (flagged) {
 				for (let chunk in "Your message was flagged as inappropriate and was not sent.".split("")) {
 					data(chunk);
@@ -164,76 +164,14 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		}
 
 		let promptStr = this.generatePrompt(conversation, prompt);
+		let prompt_tokens = encode(promptStr).length;
 
-		try {
-			let responseStr: string = "";
-			if (!this.options.revProxy) {
-				const response = await this.openAi.createCompletion(
-					{
-						model: this.options.model,
-						prompt: promptStr,
-						temperature: this.options.temperature,
-						max_tokens: this.options.max_tokens,
-						top_p: this.options.top_p,
-						frequency_penalty: this.options.frequency_penalty,
-						presence_penalty: this.options.presence_penalty,
-						stop: [this.options.stop],
-						stream: true,
-					},
-					{ responseType: "stream" },
-				);
-				for await (const message of this.streamCompletion(response.data)) {
-					try {
-						const parsed = JSON.parse(message);
-						const { text } = parsed.choices[0];
-						responseStr += text;
-						data(text);
-					} catch (error) {
-						console.error("Could not JSON parse stream message", message, error);
-					}
-				}
-			} else {
-				responseStr = await this.aksRevProxy(promptStr, data);
-			}
-
-			responseStr = responseStr
-				.replace(new RegExp(`\n${conversation.userName}:.*`, "gs"), "")
-				.replace(new RegExp(`${conversation.userName}:.*`, "gs"), "")
-				.replace(/<\|im_end\|>/g, "")
-				.replace(this.options.stop, "")
-				.replace(`${this.options.aiName}: `, "")
-				.trim();
-
-			conversation.messages.push({
-				content: responseStr,
-				type: MessageType.Assistant,
-				date: Date.now(),
-			});
-
-			return responseStr;
-		} catch (error: any) {
-			if (error.response && error.response.data && error.response.headers["content-type"] === "application/json") {
-				let errorResponseStr = "";
-
-				for await (const message of error.response.data) {
-					errorResponseStr += message;
-				}
-
-				const errorResponseJson = JSON.parse(errorResponseStr);
-				throw new Error(errorResponseJson.error.message);
-			} else {
-				throw new Error(error.message);
-			}
-		}
-	}
-
-	private async aksRevProxy(prompt: string, data: (arg0: string) => void = (_) => {}) {
 		try {
 			const response = await axios.post(
-				this.options.revProxy,
+				this.options.endpoint,
 				{
 					model: this.options.model,
-					prompt: prompt,
+					prompt: promptStr,
 					temperature: this.options.temperature,
 					max_tokens: this.options.max_tokens,
 					top_p: this.options.top_p,
@@ -247,47 +185,73 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 					headers: {
 						Accept: "text/event-stream",
 						"Content-Type": "application/json",
-						Authorization: `Bearer ${this.key}`,
+						Authorization: `Bearer ${oAIKey.key}`,
 					},
 				},
 			);
 
 			let responseStr = "";
 
-			response.data.on("data", (chunk: string) => {
-				responseStr += chunk;
-				data(chunk);
+			for await (const message of this.streamCompletion(response.data)) {
+				try {
+					const parsed = JSON.parse(message);
+					const { text } = parsed.choices[0];
+					responseStr += text;
+					data(text);
+				} catch (error) {
+					console.error("Could not JSON parse stream message", message, error);
+				}
+			}
+
+			let completion_tokens = encode(responseStr).length;
+
+			responseStr = responseStr
+				.replace(new RegExp(`\n${conversation.userName}:.*`, "gs"), "")
+				.replace(new RegExp(`${conversation.userName}:.*`, "gs"), "")
+				.replace(/<\|im_end\|>/g, "")
+				.replace(this.options.stop, "")
+				.replace(`${this.options.aiName}: `, "")
+				.trim();
+
+			let usageData = {
+				key: oAIKey.key,
+				prompt_tokens: prompt_tokens,
+				completion_tokens: completion_tokens,
+				total_tokens: prompt_tokens + completion_tokens,
+			};
+
+			usage(usageData);
+			if (this.onUsage) this.onUsage(usageData);
+
+			oAIKey.tokens += usageData.total_tokens;
+			oAIKey.balance = (oAIKey.tokens / 1000) * this.options.price;
+			oAIKey.queries++;
+
+			conversation.messages.push({
+				id: randomUUID(),
+				content: responseStr,
+				type: MessageType.Assistant,
+				date: Date.now(),
 			});
 
-			await new Promise((resolve) => response.data.on("end", resolve));
-			responseStr = responseStr.trim();
-			if (this.isJSON(responseStr)) {
-				let jsonData = JSON.parse(responseStr);
-				let response = jsonData?.choices[0]?.text;
-				return response ?? "";
-			} else return responseStr;
+			return responseStr;
 		} catch (error: any) {
-			if (error.response && error.response.data && error.response.headers["content-type"] === "application/json") {
-				let errorResponseStr = "";
+			try {
+				if (error.response && error.response.data) {
+					let errorResponseStr = "";
 
-				for await (const message of error.response.data) {
-					errorResponseStr += message;
+					for await (const message of error.response.data) {
+						errorResponseStr += message;
+					}
+
+					const errorResponseJson = JSON.parse(errorResponseStr);
+					throw new Error(errorResponseJson.error.message);
+				} else {
+					throw new Error(error.message);
 				}
-
-				const errorResponseJson = JSON.parse(errorResponseStr);
-				throw new Error(errorResponseJson.error.message);
-			} else {
+			} catch (e) {
 				throw new Error(error.message);
 			}
-		}
-	}
-
-	private isJSON(str: string) {
-		try {
-			JSON.parse(str);
-			return true;
-		} catch (e) {
-			return false;
 		}
 	}
 
@@ -295,6 +259,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		prompt = [",", "!", "?", "."].includes(prompt[prompt.length - 1]) ? prompt : `${prompt}.`; // Thanks to https://github.com/optionsx
 
 		conversation.messages.push({
+			id: randomUUID(),
 			content: prompt,
 			type: MessageType.User,
 			date: Date.now(),
@@ -304,7 +269,7 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		let promptEncodedLength = encode(promptStr).length;
 		let totalLength = promptEncodedLength + this.options.max_tokens;
 
-		while (totalLength > 4096) {
+		while (totalLength > this.options.max_conversation_tokens) {
 			conversation.messages.shift();
 			promptStr = this.convToString(conversation);
 			promptEncodedLength = encode(promptStr).length;
@@ -315,11 +280,16 @@ Current time: ${this.getTime()}${username !== "User" ? `\nName of the user talki
 		return promptStr;
 	}
 
-	public async moderate(prompt: string) {
-		let response = await this.openAi.createModeration({
-			input: prompt,
-		});
-		return response.data.results[0].flagged;
+	public async moderate(prompt: string, key: string) {
+		try {
+			let openAi = new OpenAIApi(new Configuration({ apiKey: key }));
+			let response = await openAi.createModeration({
+				input: prompt,
+			});
+			return response.data.results[0].flagged;
+		} catch (error) {
+			return false;
+		}
 	}
 
 	private convToString(conversation: Conversation) {

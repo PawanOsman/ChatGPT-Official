@@ -6,8 +6,10 @@ interface ChatGPTOptions {
 	frequency_penalty?: number;
 	presence_penalty?: number;
 	instructions?: string;
+	moderation?: boolean;
 	price?: number;
 	max_conversation_tokens?: number;
+	endpoint?: string;
 }
 
 export default ChatGPTOptions;

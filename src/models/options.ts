@@ -9,7 +9,9 @@ interface Options {
 	stop?: string;
 	aiName?: string;
 	moderation?: boolean;
-	revProxy?: string;
+	endpoint?: string;
+	price?: number;
+	max_conversation_tokens?: number;
 }
 
 export default Options;
