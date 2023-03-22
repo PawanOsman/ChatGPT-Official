@@ -10,6 +10,8 @@
 
 A simple Node.js module for creating ChatGPT using OpenAI official API.
 
+## [Check the new Google Bard Chatbot!](https://github.com/PawanOsman/GoogleBard)
+
 ## Installation
 
 To install the package, run the following command:
